@@ -367,6 +367,8 @@ function assertProvenance(
     "tool",
     "http",
     "frontend",
+    "mcp-widget",
+    "mcp-widget-write",
     "cli",
     "mcp",
     "webmcp",
@@ -430,12 +432,15 @@ function assertJsonValue(
     for (const key of Reflect.ownKeys(value)) {
       if (key === "length") continue;
       const index = typeof key === "string" ? Number(key) : -1;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (
         typeof key !== "string" ||
         !Number.isInteger(index) ||
         index < 0 ||
         index >= value.length ||
-        String(index) !== key
+        String(index) !== key ||
+        !descriptor?.enumerable ||
+        !("value" in descriptor)
       )
         invalid(`${label}.${String(key)}`);
     }
@@ -449,8 +454,16 @@ function assertJsonValue(
       Object.getPrototypeOf(value) !== null
     )
       invalid(label);
-    for (const [key, item] of Object.entries(value))
-      assertJsonValue(item, `${label}.${key}`, seen);
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (
+        typeof key !== "string" ||
+        !descriptor?.enumerable ||
+        !("value" in descriptor)
+      )
+        invalid(`${label}.${String(key)}`);
+      assertJsonValue(descriptor.value, `${label}.${key}`, seen);
+    }
   }
   seen.delete(value);
 }
@@ -487,11 +500,19 @@ function strictRecord(
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) invalid(label);
   const record = value as Record<string, unknown>;
-  const extra = Object.keys(record).find((key) => !allowed.includes(key));
-  if (extra)
-    throw new ActionReceiptValidationError(
-      `Invalid ${label}: unexpected ${extra}`,
-    );
+  for (const key of Reflect.ownKeys(record)) {
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (
+      typeof key !== "string" ||
+      !descriptor?.enumerable ||
+      !("value" in descriptor) ||
+      !allowed.includes(key)
+    ) {
+      throw new ActionReceiptValidationError(
+        `Invalid ${label}: unexpected ${String(key)}`,
+      );
+    }
+  }
   return record;
 }
 

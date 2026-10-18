@@ -345,6 +345,19 @@ describe("receipt serialization and validation", () => {
     expect(parseActionReceipt(serialized)).toEqual(receipt);
   });
 
+  it.each(["mcp-widget", "mcp-widget-write"] as const)(
+    "round-trips the %s caller",
+    (caller) => {
+      const withWidgetCaller = {
+        ...receipt,
+        provenance: { caller },
+      };
+      expect(
+        parseActionReceipt(serializeActionReceipt(withWidgetCaller)),
+      ).toEqual(withWidgetCaller);
+    },
+  );
+
   it.each([
     ["not json", "JSON"],
     [JSON.stringify({ ...receipt, schemaVersion: "2" }), "schemaVersion"],
@@ -380,5 +393,28 @@ describe("receipt serialization and validation", () => {
     expect(() =>
       assertActionReceipt({ ...receipt, result: withExtraProperty } as never),
     ).toThrow("result.traceId");
+  });
+
+  it("rejects symbol, non-enumerable, and accessor JSON properties", () => {
+    const symbolProperty = { ok: true } as Record<PropertyKey, unknown>;
+    symbolProperty[Symbol("hidden")] = "not-json";
+    expect(() =>
+      assertActionReceipt({ ...receipt, result: symbolProperty } as never),
+    ).toThrow("result.Symbol(hidden)");
+
+    const hiddenProperty = { ok: true } as Record<string, unknown>;
+    Object.defineProperty(hiddenProperty, "hidden", { value: "not-json" });
+    expect(() =>
+      assertActionReceipt({ ...receipt, result: hiddenProperty } as never),
+    ).toThrow("result.hidden");
+
+    const accessorProperty = { ok: true } as Record<string, unknown>;
+    Object.defineProperty(accessorProperty, "computed", {
+      enumerable: true,
+      get: () => "not-data",
+    });
+    expect(() =>
+      assertActionReceipt({ ...receipt, result: accessorProperty } as never),
+    ).toThrow("result.computed");
   });
 });
